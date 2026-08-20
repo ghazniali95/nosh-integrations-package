@@ -1,0 +1,10 @@
+/vendor/
+composer.lock
+.env
+.env.*
+.phpunit.result.cache
+.DS_Store
+
+# Delivery Hero's OpenAPI specs are their copyrighted material — reference only,
+# never redistributed. Keep them local (like the FBR PDF in the Tax package).
+/specs/
