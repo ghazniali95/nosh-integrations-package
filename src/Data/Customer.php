@@ -13,6 +13,8 @@ class Customer
         public ?string $phone = null,
         public ?string $email = null,
         public ?string $address = null,
+        public ?float $lat = null,
+        public ?float $lng = null,
     ) {
     }
 
@@ -23,6 +25,8 @@ class Customer
             'phone'   => $this->phone,
             'email'   => $this->email,
             'address' => $this->address,
+            'lat'     => $this->lat,
+            'lng'     => $this->lng,
         ];
     }
 

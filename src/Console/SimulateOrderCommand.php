@@ -41,7 +41,7 @@ class SimulateOrderCommand extends Command
             );
             $this->line('Signed a Middleware JWT (service=middleware) with the configured secret.');
         } else {
-            $this->line('No webhook secret configured → sending unauthenticated (verification is skipped).');
+            $this->line('No webhook secret configured → sending unauthenticated (accepted only on the mock transport).');
         }
 
         $payload = $this->sampleOrder();
