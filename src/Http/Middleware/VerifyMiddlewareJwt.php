@@ -11,9 +11,10 @@ use Nosh\OmniConnect\OmniConnectManager;
  * Hero: the Authorization JWT must validate against the shared webhook secret
  * and carry the `service: middleware` claim (delegated to the driver).
  *
- * Skipped when webhook.verify_signature is false or no secret is configured
- * (local dev / mock). For multi-tenant secret lookup by {remoteId}, bind your
- * own resolver — this uses the configured single-install secret by default.
+ * Skipped only when webhook.verify_signature is false, or when no secret is
+ * configured AND the transport is `mock` (local dev). Anywhere else a missing
+ * secret is a 401: a live install with a blank OMNICONNECT_WEBHOOK_SECRET used
+ * to accept anyone's orders, which is the wrong way to fail.
  */
 class VerifyMiddlewareJwt
 {
@@ -37,11 +38,11 @@ class VerifyMiddlewareJwt
         $secret = $credentials?->webhookSecret ?: ($config['secret'] ?? null);
 
         if (empty($secret)) {
-            // Single-install with no secret configured → treat as dev (skip).
-            // Multi-tenant (database) with an unresolved secret → fail closed:
-            // we cannot identify/verify the caller.
+            // Single-install on the mock transport with no secret → local dev (skip).
+            // Everything else fails closed: we cannot identify/verify the caller.
             $isMultiTenant = ($fullConfig['credentials']['driver'] ?? 'env') === 'database' || $this->manager->hasInboundResolver();
-            if (! $isMultiTenant && empty($config['secret'])) {
+            $isMock = ($fullConfig['transport'] ?? 'http') === 'mock';
+            if (! $isMultiTenant && $isMock && empty($config['secret'])) {
                 return $next($request);
             }
 

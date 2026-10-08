@@ -343,14 +343,21 @@ when acknowledging the order (see §12).
 
 **Inbound authentication.** Every inbound call carries a JWT (HS512) signed with
 your webhook secret and a `service: middleware` claim; OmniConnect verifies
-both. In multi-tenant mode the secret is resolved per restaurant. To mount the
+both. In multi-tenant mode the secret is resolved per restaurant. **A missing
+secret fails closed (`401`)** — the only exception is a single-install on the
+`mock` transport with no secret at all (local dev). To mount the
 routes yourself instead, set `OMNICONNECT_WEBHOOK_ROUTES=false` and register them from
 `src/Http/routes.php` inside your own route group.
 
 **Idempotency.** foodpanda may re-deliver a dispatch. OmniConnect keys
 `omniconnect_orders` on `(platform, order_token)`, so a re-delivery returns the same
-`remoteOrderId` and fires side effects only once — no duplicate orders, no
-double deductions.
+`remoteOrderId` and `OrderReceived` fires only once.
+
+**Retried handoff.** `handled_at` is stamped only after your
+`IncomingOrderHandler` returns. If it throws, foodpanda gets a 5xx, re-sends,
+and the re-delivery runs your handler again — an order is never acknowledged
+to foodpanda without your app having taken it. **Your handler must therefore be
+idempotent on `orderToken`** (e.g. a unique key on it in your own orders table).
 
 ---
 
@@ -373,8 +380,10 @@ class FoodpandaOrderHandler implements IncomingOrderHandler
     public function handle(Order $order): ?string
     {
         // Persist to your own system, print to the kitchen, deduct inventory…
-        // Return 'accepted' to have OmniConnect auto-accept with foodpanda,
-        // or null to decide later (you'll call accept()/reject() yourself).
+        // Return 'accepted' to have OmniConnect auto-accept with foodpanda
+        // (queued as AcceptOrderJob on OMNICONNECT_QUEUE, so the webhook
+        // answers at once), or null to decide later (accept()/reject() yourself).
+        // May run more than once for the same order — see "Retried handoff".
         return null;
     }
 
@@ -564,10 +573,17 @@ Inbound orders are mapped from foodpanda's payload to a platform-neutral
 | `test` | a foodpanda **test order** — do **not** send it to the kitchen |
 | `callbackUrls` | per-order URLs foodpanda gave for status updates |
 | `raw` | the untouched payload (audit / anything not mapped) |
+| `remoteId` | the POS vendor id the webhook was addressed to — map branches on this |
+| `discountTotal`, `discounts` | paisa; each `{name, amount, type, sponsor}` (`sponsor`: who funds it, when sent) |
+| `containerCharge`, `riderTip`, `collectFromCustomer`, `payRestaurant` | paisa; `payRestaurant` is null when not sent |
+| `paymentType`, `preOrder` | |
+| `expectedDeliveryTime`, `riderPickupTime`, `pickupTime` | ISO-8601 strings as sent |
 
 Each `OrderItem` has `remoteId` (your SKU — bind recipes/stock to this, never to
 price), `name`, `quantity`, `unitPrice`, `total` (paisa), `variation`, and
-nested `modifiers`.
+nested `modifiers`. It also keeps `remoteCode` (exactly as sent, null when
+blank), `platformId` (foodpanda's own product id — the only stable key for a
+menu built on foodpanda rather than pushed from your POS) and `discount`.
 
 ---
 
@@ -594,10 +610,11 @@ Listen to any of these (`Nosh\OmniConnect\Events\…`):
   `tenant_id`, `platform`, `sandbox`, `username`, `password` *(encrypted)*,
   `chain_code`, `vendor_ids` *(JSON)*, `webhook_secret` *(encrypted)*.
 - **`omniconnect_orders`** — every received order: `platform`, `tenant_id`,
-  `order_token`, `remote_order_id`, `order_code`, `vendor_id`, `status`,
+  `order_token`, `remote_order_id`, `order_code`, `vendor_id`, `remote_id`, `status`,
   `expedition_type`, `total` *(paisa)*, `currency`, `paid_online`,
   `reject_reason`, `payload` *(JSON, the raw dispatch)*, and lifecycle
-  timestamps. Unique on `(platform, order_token)` for idempotency.
+  timestamps incl. `handled_at`. Status callbacks are matched under the
+  `{remoteId}` the order was dispatched to. Unique on `(platform, order_token)` for idempotency.
 
 ---
 
@@ -707,7 +724,8 @@ design.
 
 ## 24. Troubleshooting / FAQ
 
-**Inbound webhooks return 401.** The JWT didn't verify. Check the
+**Inbound webhooks return 401.** The JWT didn't verify, or no webhook secret is
+configured (fail-closed outside the mock transport). Check the
 `OMNICONNECT_WEBHOOK_SECRET` (or the tenant's `webhook_secret`) matches what foodpanda
 issued for that environment (staging vs production secrets differ). During local
 development you can set `OMNICONNECT_WEBHOOK_VERIFY=false`.

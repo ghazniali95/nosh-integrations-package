@@ -50,6 +50,39 @@ class Order
         public ?string $eventId = null,
         /** The untouched raw payload, for audit / debugging. */
         public array $raw = [],
+        /**
+         * The POS-side vendor id the platform addressed this order to (the
+         * {remoteId} in the webhook URL). Distinct from `vendorId`, which is
+         * the platform's own restaurant id. Map branches on THIS one.
+         */
+        public ?string $remoteId = null,
+        /** Order-level discounts in minor units, summed. */
+        public int $discountTotal = 0,
+        /**
+         * Each discount as the platform reported it:
+         * [{name, amount (paisa), type, sponsor}] — `sponsor` says who funds it
+         * (e.g. platform vs vendor) when the platform tells us.
+         * @var array<int,array{name:?string,amount:int,type:?string,sponsor:?string}>
+         */
+        public array $discounts = [],
+        /** Container / packaging charge, minor units. */
+        public int $containerCharge = 0,
+        /** Rider tip, minor units. Not restaurant revenue. */
+        public int $riderTip = 0,
+        /** Cash the courier must collect at the door (COD), minor units. */
+        public int $collectFromCustomer = 0,
+        /** What the platform says it will pay the restaurant, minor units, when sent. */
+        public ?int $payRestaurant = null,
+        /** Payment type as the platform named it (e.g. `paid`, `cash`). */
+        public ?string $paymentType = null,
+        /** Scheduled for later rather than ASAP. */
+        public bool $preOrder = false,
+        /** When the platform expects the food at the door / ready for collection (ISO-8601). */
+        public ?string $expectedDeliveryTime = null,
+        /** When the platform's courier is due to collect (ISO-8601). Set for platform-delivered orders. */
+        public ?string $riderPickupTime = null,
+        /** When a pickup customer is due (ISO-8601). */
+        public ?string $pickupTime = null,
     ) {
     }
 
@@ -80,6 +113,18 @@ class Order
             'test'            => $this->test,
             'callback_urls'   => $this->callbackUrls,
             'event_id'        => $this->eventId,
+            'remote_id'              => $this->remoteId,
+            'discount_total'         => $this->discountTotal,
+            'discounts'              => $this->discounts,
+            'container_charge'       => $this->containerCharge,
+            'rider_tip'              => $this->riderTip,
+            'collect_from_customer'  => $this->collectFromCustomer,
+            'pay_restaurant'         => $this->payRestaurant,
+            'payment_type'           => $this->paymentType,
+            'pre_order'              => $this->preOrder,
+            'expected_delivery_time' => $this->expectedDeliveryTime,
+            'rider_pickup_time'      => $this->riderPickupTime,
+            'pickup_time'            => $this->pickupTime,
         ];
     }
 }

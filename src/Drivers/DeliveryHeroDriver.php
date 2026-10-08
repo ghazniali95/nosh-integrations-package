@@ -142,13 +142,28 @@ class DeliveryHeroDriver extends AbstractDriver
                 unitPrice: $this->paisa($unit),
                 total: $this->paisa($p['totalPrice'] ?? $p['total'] ?? ((float) $unit * $qty)),
                 modifiers: $this->mapModifiers($p['selectedToppings'] ?? $p['toppings'] ?? $p['modifiers'] ?? []),
-                variation: $p['variation'] ?? $p['categoryName'] ?? null,
+                // DH sends the size as an object ({name}); older payloads a string.
+                variation: $this->variationName($p['variation'] ?? null) ?? $p['categoryName'] ?? null,
                 comment: $p['comment'] ?? null,
+                platformId: isset($p['id']) ? (string) $p['id'] : null,
+                remoteCode: $this->blankToNull($p['remoteCode'] ?? null),
+                discount: $this->paisa($p['discountAmount'] ?? 0),
             );
         }
 
         $price = $order['price'] ?? [];
         $payment = $order['payment'] ?? [];
+        $delivery = (array) ($order['delivery'] ?? []);
+        [$discounts, $discountTotal] = $this->parseDiscounts($order, $price);
+
+        $customer = isset($order['customer']) ? Customer::fromArray((array) $order['customer']) : null;
+        $address = (array) ($delivery['address'] ?? []);
+        if ($address !== []) {
+            $customer ??= new Customer();
+            $customer->address ??= $this->addressLine($address);
+            $customer->lat ??= isset($address['latitude']) ? (float) $address['latitude'] : null;
+            $customer->lng ??= isset($address['longitude']) ? (float) $address['longitude'] : null;
+        }
 
         return new Order(
             orderToken: $token,
@@ -157,9 +172,11 @@ class DeliveryHeroDriver extends AbstractDriver
             vendorId: (string) ($order['platformRestaurant']['id'] ?? $order['vendorId'] ?? '') ?: null,
             status: 'received',
             expeditionType: $order['expeditionType'] ?? null,
-            customer: isset($order['customer']) ? Customer::fromArray((array) $order['customer']) : null,
+            customer: $customer,
             items: $items,
-            subtotal: $this->paisa($price['totalNet'] ?? 0),
+            // `subTotal` is the products' sum; `totalNet` (ex-VAT total) is the
+            // older fallback this field was first read from.
+            subtotal: $this->paisa($price['subTotal'] ?? $price['totalNet'] ?? 0),
             deliveryFee: $this->sumFees($price['deliveryFees'] ?? []),
             total: $this->paisa($price['grandTotal'] ?? $order['total'] ?? 0),
             currency: $order['localInfo']['currencySymbol'] ?? $order['currency'] ?? 'PKR',
@@ -170,7 +187,93 @@ class DeliveryHeroDriver extends AbstractDriver
             callbackUrls: (array) ($order['callbackUrls'] ?? []),
             eventId: $token,
             raw: $payload,
+            discountTotal: $discountTotal,
+            discounts: $discounts,
+            containerCharge: $this->paisa($price['containerCharge'] ?? 0),
+            riderTip: $this->paisa($price['riderTip'] ?? 0),
+            collectFromCustomer: $this->paisa($price['collectFromCustomer'] ?? 0),
+            payRestaurant: isset($price['payRestaurant']) ? $this->paisa($price['payRestaurant']) : null,
+            paymentType: isset($payment['type']) ? (string) $payment['type'] : null,
+            preOrder: (bool) ($order['preOrder'] ?? false),
+            expectedDeliveryTime: $delivery['expectedDeliveryTime'] ?? null,
+            riderPickupTime: $delivery['riderPickupTime'] ?? null,
+            pickupTime: $order['pickup']['pickupTime'] ?? null,
         );
+    }
+
+    /**
+     * Order-level discounts. DH lists them under `discounts[]` (each with an
+     * `amount` and, where it knows, who sponsors it) and/or a single
+     * `price.discountAmountTotal`. The list wins when present; the total is
+     * the fallback so a payload with only the total still nets correctly.
+     *
+     * @return array{0:array<int,array{name:?string,amount:int,type:?string,sponsor:?string}>,1:int}
+     */
+    protected function parseDiscounts(array $order, array $price): array
+    {
+        $discounts = [];
+        foreach ((array) ($order['discounts'] ?? []) as $d) {
+            $discounts[] = [
+                'name'    => $d['name'] ?? null,
+                'amount'  => $this->paisa($d['amount'] ?? $d['value'] ?? 0),
+                'type'    => $d['type'] ?? null,
+                'sponsor' => $this->sponsorOf($d),
+            ];
+        }
+
+        $sum = array_sum(array_column($discounts, 'amount'));
+        $total = $sum ?: $this->paisa($price['discountAmountTotal'] ?? 0);
+
+        return [$discounts, $total];
+    }
+
+    /** Who funds a discount, normalised to lower case; null when the payload does not say. */
+    protected function sponsorOf(array $d): ?string
+    {
+        $raw = $d['sponsor'] ?? $d['sponsorship'] ?? $d['fundedBy'] ?? null;
+        if (is_array($raw)) {
+            $raw = $raw['type'] ?? $raw['name'] ?? null;
+        }
+
+        return $raw === null || $raw === '' ? null : strtolower((string) $raw);
+    }
+
+    /** One readable delivery-address line from DH's structured address. */
+    protected function addressLine(array $a): ?string
+    {
+        if ($a === []) {
+            return null;
+        }
+
+        $parts = array_filter([
+            $a['flatNumber'] ?? null,
+            $a['floor'] ?? null,
+            $a['building'] ?? null,
+            trim(($a['number'] ?? '').' '.($a['street'] ?? '')) ?: null,
+            $a['deliveryArea'] ?? null,
+            $a['city'] ?? null,
+        ], fn ($v) => $v !== null && $v !== '');
+
+        $line = implode(', ', $parts);
+        if (! empty($a['deliveryInstructions'])) {
+            $line .= ($line !== '' ? ' — ' : '').$a['deliveryInstructions'];
+        }
+
+        return $line !== '' ? $line : null;
+    }
+
+    protected function variationName(mixed $v): ?string
+    {
+        if (is_array($v)) {
+            $v = $v['name'] ?? null;
+        }
+
+        return $this->blankToNull($v);
+    }
+
+    protected function blankToNull(mixed $v): ?string
+    {
+        return $v === null || $v === '' ? null : (string) $v;
     }
 
     /** Sum a price.deliveryFees[] array (each fee may carry an `amount`/`value`). */
@@ -216,7 +319,10 @@ class DeliveryHeroDriver extends AbstractDriver
     public function verifyInboundAuth(array $headers, ?string $secret): bool
     {
         if (empty($secret)) {
-            return true; // no secret configured → verification skipped (dev/mock)
+            // Nothing to verify against means we cannot know who is calling.
+            // Deciding to skip verification (mock / local dev) is the
+            // middleware's call, made from config — never a silent default here.
+            return false;
         }
 
         $bearer = '';
@@ -257,6 +363,8 @@ class DeliveryHeroDriver extends AbstractDriver
                 total: $this->paisa($m['totalPrice'] ?? $m['total'] ?? ((float) ($m['price'] ?? 0) * $qty)),
                 modifiers: $this->mapModifiers($m['children'] ?? []),
                 variation: $m['type'] ?? null,
+                platformId: isset($m['id']) ? (string) $m['id'] : null,
+                remoteCode: $this->blankToNull($m['remoteCode'] ?? null),
             );
         }
 
