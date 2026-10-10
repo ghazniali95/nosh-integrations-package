@@ -2,6 +2,11 @@
 
 All notable changes to `nosh/omniconnect`. Versions follow [Semantic Versioning](https://semver.org).
 
+## v1.1.1 — 2026-10-08
+
+### Fixed
+- **Catalog-import results were refused in multi-tenant installs.** The `catalog-import-callback` route has no `{remoteId}` in its path, so the webhook middleware could not find a tenant's secret and answered every import result with `401`. It now also reads `?remoteId=` from the query string: put the POS vendor id on the `callbackUrl` you send with the catalog (e.g. `…/catalog-import-callback?remoteId=POS_VENDOR_1`) and the result is verified with that restaurant's secret.
+
 ## v1.1.0 — 2026-10-08
 
 Hardening before the first production install, plus the order fields a POS needs to book foodpanda money correctly.

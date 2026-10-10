@@ -334,7 +334,7 @@ that verifies foodpanda's signed JWT:
 | `PUT   {prefix}/remoteId/{remoteId}/remoteOrder/{remoteOrderId}/posOrderStatus` | Cancellation / picked-up / modification result |
 | `PUT   {prefix}/remoteId/{remoteId}/availability` | Vendor availability change |
 | `GET   {prefix}/menuimport/{remoteId}` | foodpanda requests your menu |
-| `POST  {prefix}/catalog-import-callback` | Catalog-import status |
+| `POST  {prefix}/catalog-import-callback?remoteId={remoteId}` | Catalog-import status — this is the `callbackUrl` YOU send with a catalog; add `?remoteId=` (the POS vendor id) so a multi-tenant install can verify it |
 
 **Give foodpanda your base URL** during onboarding, e.g.
 `https://your-app.com/omniconnect/webhooks`. They will call the paths above.

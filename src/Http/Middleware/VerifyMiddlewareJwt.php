@@ -33,7 +33,12 @@ class VerifyMiddlewareJwt
 
         // Resolve THIS restaurant's webhook secret from the {remoteId} in the
         // path, so every tenant is verified against its own shared secret.
-        $remoteId = (string) $request->route('remoteId');
+        //
+        // The catalog-import callback has no {remoteId} in its path — it is a
+        // URL WE hand foodpanda with the catalog — so a multi-tenant install
+        // could never verify it and refused every import result. Put the POS
+        // vendor id on that URL as `?remoteId=` and it is resolved the same way.
+        $remoteId = (string) ($request->route('remoteId') ?: $request->query('remoteId', ''));
         $credentials = $remoteId !== '' ? $this->manager->credentialsForRemoteId($remoteId) : null;
         $secret = $credentials?->webhookSecret ?: ($config['secret'] ?? null);
 

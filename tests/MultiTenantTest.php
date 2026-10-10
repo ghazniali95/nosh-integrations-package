@@ -133,6 +133,27 @@ class MultiTenantTest extends Orchestra
             ->assertStatus(401);
     }
 
+    public function test_catalog_import_callback_is_verified_by_the_remote_id_on_its_url(): void
+    {
+        \Illuminate\Support\Facades\Event::fake([\Nosh\OmniConnect\Events\CatalogImportStatusReceived::class]);
+        $body = ['catalogImportId' => 'imp-1', 'status' => 'DONE'];
+
+        // No vendor on the URL: nothing to verify against — refused.
+        $this->withHeaders($this->auth('secret-A'))
+            ->postJson('omniconnect/webhooks/catalog-import-callback', $body)
+            ->assertStatus(401);
+
+        // The vendor we put on the callback URL: verified with ITS secret.
+        $this->withHeaders($this->auth('secret-B'))
+            ->postJson('omniconnect/webhooks/catalog-import-callback?remoteId=POS_A_1', $body)
+            ->assertStatus(401);
+        $this->withHeaders($this->auth('secret-A'))
+            ->postJson('omniconnect/webhooks/catalog-import-callback?remoteId=POS_A_1', $body)
+            ->assertOk();
+
+        \Illuminate\Support\Facades\Event::assertDispatched(\Nosh\OmniConnect\Events\CatalogImportStatusReceived::class, 1);
+    }
+
     public function test_outbound_authenticates_as_the_selected_tenant(): void
     {
         $recorder = new LoginRecordingTransport();
