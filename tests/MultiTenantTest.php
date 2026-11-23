@@ -140,6 +140,16 @@ class MultiTenantTest extends Orchestra
         $this->assertDatabaseMissing('omniconnect_orders', ['order_token' => 'MT-Y']);
     }
 
+    public function test_unknown_vendor_is_500_even_with_a_global_fallback_secret(): void
+    {
+        config(['omniconnect.webhook.secret' => 'global-secret']);
+
+        $this->withHeaders($this->auth('global-secret'))
+            ->postJson('omniconnect/webhooks/order/POS_UNKNOWN', $this->payload('MT-G'))
+            ->assertStatus(500);
+        $this->assertDatabaseMissing('omniconnect_orders', ['order_token' => 'MT-G']);
+    }
+
     public function test_catalog_import_callback_is_verified_by_the_remote_id_on_its_url(): void
     {
         \Illuminate\Support\Facades\Event::fake([\Nosh\OmniConnect\Events\CatalogImportStatusReceived::class]);

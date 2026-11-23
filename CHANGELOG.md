@@ -8,7 +8,7 @@ Delivery Hero UAT (Direct Integration checklist).
 
 ### Changed
 - **Order dispatch is answered `202 Accepted`** (was `200`), as the UAT checklist expects (case 2.1.3). The body is unchanged: `{"remoteResponse": {"remoteOrderId": …}}`.
-- **A remote ID no restaurant owns is answered `500`** with `{"reason": "UNKNOWN_REMOTE_ID"}` (was `401`), in multi-tenant installs with no global webhook secret. Delivery Hero retries a 500 and raises an alert; a 401 read as an auth problem on their side. A bad or missing JWT for a KNOWN remote ID is still `401`. Nothing is stored either way.
+- **A remote ID no restaurant owns is answered `500`** with `{"reason": "UNKNOWN_REMOTE_ID"}` (was `401`), in multi-tenant installs (even when a global fallback secret is set). Delivery Hero retries a 500 and raises an alert; a 401 read as an auth problem on their side. A bad or missing JWT for a KNOWN remote ID is still `401`. Nothing is stored either way.
 
 ## v1.1.1 — 2026-10-08
 
