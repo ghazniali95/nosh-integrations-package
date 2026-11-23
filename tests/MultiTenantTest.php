@@ -111,7 +111,7 @@ class MultiTenantTest extends Orchestra
         // Signed with tenant A's secret, addressed to A's vendor → accepted + tagged.
         $this->withHeaders($this->auth('secret-A'))
             ->postJson('omniconnect/webhooks/order/POS_A_1', $this->payload('MT-A1'))
-            ->assertOk();
+            ->assertStatus(202);
 
         $this->assertDatabaseHas('omniconnect_orders', ['order_token' => 'MT-A1', 'tenant_id' => 'rest-A', 'vendor_id' => 'POS_A_1']);
     }
@@ -126,11 +126,18 @@ class MultiTenantTest extends Orchestra
         $this->assertDatabaseMissing('omniconnect_orders', ['order_token' => 'MT-A2']);
     }
 
-    public function test_unknown_vendor_fails_closed(): void
+    public function test_unknown_vendor_answers_500_and_stores_nothing(): void
     {
+        // DH UAT: a wrong remote code is answered 500 so the middleware retries and alerts.
         $this->withHeaders($this->auth('secret-A'))
             ->postJson('omniconnect/webhooks/order/POS_UNKNOWN', $this->payload('MT-X'))
-            ->assertStatus(401);
+            ->assertStatus(500)
+            ->assertJsonPath('reason', 'UNKNOWN_REMOTE_ID');
+
+        // Unsigned is no different: nothing is created either way.
+        $this->postJson('omniconnect/webhooks/order/POS_UNKNOWN', $this->payload('MT-Y'))->assertStatus(500);
+        $this->assertDatabaseMissing('omniconnect_orders', ['order_token' => 'MT-X']);
+        $this->assertDatabaseMissing('omniconnect_orders', ['order_token' => 'MT-Y']);
     }
 
     public function test_catalog_import_callback_is_verified_by_the_remote_id_on_its_url(): void

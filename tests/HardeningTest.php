@@ -115,7 +115,7 @@ class HardeningTest extends TestCase
         $this->assertNull(OmniConnectOrder::first()->handled_at);
         $this->assertSame(0, ScriptedHandler::$handled);
 
-        $first = $this->dispatch()->assertOk()->json('remoteResponse.remoteOrderId');
+        $first = $this->dispatch()->assertStatus(202)->json('remoteResponse.remoteOrderId');
         $this->assertSame(1, ScriptedHandler::$handled, 'the re-delivery must hand the order over');
         $this->assertNotNull(OmniConnectOrder::first()->handled_at);
 
@@ -132,7 +132,7 @@ class HardeningTest extends TestCase
         Queue::fake();
         ScriptedHandler::$intent = 'accepted';
 
-        $this->dispatch()->assertOk();
+        $this->dispatch()->assertStatus(202);
 
         Queue::assertPushed(AcceptOrderJob::class, fn (AcceptOrderJob $j) => $j->orderToken === 'T-1');
         $this->assertSame('received', OmniConnectOrder::first()->status);
@@ -142,7 +142,7 @@ class HardeningTest extends TestCase
     {
         ScriptedHandler::$intent = 'accepted';   // sync queue in tests: the job runs now
 
-        $this->dispatch()->assertOk();
+        $this->dispatch()->assertStatus(202);
 
         $this->assertSame('accepted', OmniConnectOrder::first()->status);
     }
@@ -163,7 +163,7 @@ class HardeningTest extends TestCase
         config(['omniconnect.webhook.secret' => null, 'omniconnect.transport' => 'mock']);
         $this->refreshManager();
 
-        $this->postJson('omniconnect/webhooks/order/POS1', $this->payload())->assertOk();
+        $this->postJson('omniconnect/webhooks/order/POS1', $this->payload())->assertStatus(202);
     }
 
     // ---- Vendor-scoped status updates ------------------------------------
@@ -200,7 +200,7 @@ class HardeningTest extends TestCase
 
     public function test_dispatch_carries_money_timing_address_and_line_keys(): void
     {
-        $this->dispatch('POS1')->assertOk();
+        $this->dispatch('POS1')->assertStatus(202);
         $o = ScriptedHandler::$last;
 
         $this->assertSame('POS1', $o->remoteId);

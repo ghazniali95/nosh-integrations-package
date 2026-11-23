@@ -26,7 +26,11 @@ class PluginController
     {
     }
 
-    /** New order. Must acknowledge with our remoteOrderId (mandatory). */
+    /**
+     * New order. Must acknowledge with our remoteOrderId (mandatory). Answered
+     * with 202 Accepted: the Delivery Hero UAT checklist (case 2.1.3) expects
+     * 202 for an accepted dispatch.
+     */
     public function dispatchOrder(Request $request, string $remoteId): JsonResponse
     {
         $payload = $request->json()->all() ?: $request->all();
@@ -41,7 +45,7 @@ class PluginController
 
         $ack = $this->intake->receiveOrder($remoteId, $payload);
 
-        return response()->json($ack, 200);
+        return response()->json($ack, 202);
     }
 
     /** Status update for an already-dispatched order (cancellation, picked-up…). */

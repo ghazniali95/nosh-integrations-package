@@ -42,6 +42,14 @@ class VerifyMiddlewareJwt
         $credentials = $remoteId !== '' ? $this->manager->credentialsForRemoteId($remoteId) : null;
         $secret = $credentials?->webhookSecret ?: ($config['secret'] ?? null);
 
+        // A remote ID no tenant owns is OUR misconfiguration, not a bad caller:
+        // Delivery Hero expects 500 here so it retries and raises an alert,
+        // where a 401 reads as an auth problem on their side. Only when no
+        // global secret could still verify the call (multi-tenant installs).
+        if ($remoteId !== '' && $credentials === null && empty($config['secret'])) {
+            return response()->json(['reason' => 'UNKNOWN_REMOTE_ID', 'message' => "No restaurant is linked to remote ID {$remoteId}."], 500);
+        }
+
         if (empty($secret)) {
             // Single-install on the mock transport with no secret → local dev (skip).
             // Everything else fails closed: we cannot identify/verify the caller.
