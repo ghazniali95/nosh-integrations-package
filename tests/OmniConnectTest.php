@@ -57,7 +57,7 @@ class OmniConnectTest extends TestCase
         $res = $this->withHeaders($this->middlewareAuth())
             ->postJson('omniconnect/webhooks/order/POS_REST_1', $this->dispatchPayload());
 
-        $res->assertOk();
+        $res->assertStatus(202);
         $remoteOrderId = $res->json('remoteResponse.remoteOrderId');
         $this->assertNotEmpty($remoteOrderId);
 
@@ -187,7 +187,7 @@ class OmniConnectTest extends TestCase
         // Dispatch an order carrying its own accept callback URL.
         $payload = $this->dispatchPayload('CB-1');
         $payload['callbackUrls'] = ['orderAcceptedUrl' => 'https://dh.example/cb/accept/CB-1'];
-        $this->withHeaders($this->middlewareAuth())->postJson('omniconnect/webhooks/order/POS1', $payload)->assertOk();
+        $this->withHeaders($this->middlewareAuth())->postJson('omniconnect/webhooks/order/POS1', $payload)->assertStatus(202);
 
         OmniConnect::orders()->accept('CB-1');
         $this->assertSame('https://dh.example/cb/accept/CB-1', $recorder->lastPostUrl);

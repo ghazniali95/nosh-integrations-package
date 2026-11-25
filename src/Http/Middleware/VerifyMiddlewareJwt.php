@@ -42,10 +42,19 @@ class VerifyMiddlewareJwt
         $credentials = $remoteId !== '' ? $this->manager->credentialsForRemoteId($remoteId) : null;
         $secret = $credentials?->webhookSecret ?: ($config['secret'] ?? null);
 
+        // A remote ID no tenant owns is OUR misconfiguration, not a bad caller:
+        // Delivery Hero expects 500 here so it retries and raises an alert,
+        // where a 401 reads as an auth problem on their side. Multi-tenant
+        // installs only (a single install always resolves its env credentials);
+        // a global fallback secret does not make an unowned remote ID ours.
+        $isMultiTenant = ($fullConfig['credentials']['driver'] ?? 'env') === 'database' || $this->manager->hasInboundResolver();
+        if ($remoteId !== '' && $credentials === null && $isMultiTenant) {
+            return response()->json(['reason' => 'UNKNOWN_REMOTE_ID', 'message' => "No restaurant is linked to remote ID {$remoteId}."], 500);
+        }
+
         if (empty($secret)) {
             // Single-install on the mock transport with no secret → local dev (skip).
             // Everything else fails closed: we cannot identify/verify the caller.
-            $isMultiTenant = ($fullConfig['credentials']['driver'] ?? 'env') === 'database' || $this->manager->hasInboundResolver();
             $isMock = ($fullConfig['transport'] ?? 'http') === 'mock';
             if (! $isMultiTenant && $isMock && empty($config['secret'])) {
                 return $next($request);
